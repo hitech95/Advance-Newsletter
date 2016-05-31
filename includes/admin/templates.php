@@ -96,19 +96,6 @@ class BATemplate extends AdvNewsletters
         return $helper_list->generateList($templates, $fields_list);
     }
 
-    public function getTemplates()
-    {
-        $id_lang = $this->context->language->id;
-
-        $dbquery = new DbQuery();
-        $dbquery->select('t.`id` AS `id`, l.`name` AS `name`, t.`status` AS `status`');
-        $dbquery->from('newsletter_template', 't');
-        $dbquery->leftJoin('newsletter_template_lang', 'l', 't.id = l.id_template');
-        $dbquery->where('l.`id_lang` = ' . $id_lang);
-
-        return Db::getInstance()->executeS($dbquery->build());
-    }
-
     public function paginateTemplates($templates, $page = 1, $pagination = 50)
     {
         if (count($templates) > $pagination)

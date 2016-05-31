@@ -25,12 +25,12 @@
  *  International Registered Trademark & Property of PrestaShop SA
  * @since 1.6
  */
-class SendMail extends banewsletters
+class SendMail extends AdvNewsletters
 {
     public function processSendMail()
     {
         require_once(_PS_SWIFT_DIR_ . '/swift_required.php');
-        require_once(_PS_MODULE_DIR_ . 'banewsletters/includes/newsletter.php');
+        //require_once(_PS_MODULE_DIR_ . 'banewsletters/includes/newsletter.php');
 
         //$newsletter = new BANewsletterAdmin();
 
@@ -63,7 +63,7 @@ class SendMail extends banewsletters
             if (!empty($emailAddressArray)) {
 
                 $transport = null;
-                if ($configuration['PS_MAIL_METHOD']) {
+                if ($configuration['PS_MAIL_METHOD'] == "2") {
 
                     if (!isset($configuration['PS_MAIL_SMTP_PORT'])) {
                         $configuration['PS_MAIL_SMTP_PORT'] = 'default';
@@ -81,7 +81,7 @@ class SendMail extends banewsletters
                     if (!empty($configuration['PS_MAIL_PASSWD'])) {
                         $transport->setPassword($configuration['PS_MAIL_PASSWD']);
                     }
-                    if (isset($configuration['PS_MAIL_SMTP_ENCRYPTION'])) {
+                    if (isset($configuration['PS_MAIL_SMTP_ENCRYPTION']) && $configuration['PS_MAIL_SMTP_ENCRYPTION'] != "off") {
                         $transport->setEncryption($configuration['PS_MAIL_SMTP_ENCRYPTION']);
                     }
                 } else {
@@ -91,6 +91,8 @@ class SendMail extends banewsletters
                 $mailer = Swift_Mailer::newInstance($transport);
 
                 foreach ($emailAddressArray as $emailAddress) {
+
+                    echo $emailAddress['to'] . "\n";
 
                     $body = Tools::htmlentitiesDecodeUTF8($emailAddress['body']);
 

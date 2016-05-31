@@ -30,7 +30,7 @@ require_once('../../../init.php');
 require_once('../advnewsletters.php');
 set_time_limit(0);
 require_once('send_mail.php');
-$sendMail = new sendMail();
+$sendMail = new SendMail();
 $sendMail->processSendMail();
 // $logMail=date("Y-m-d H:i:s")."\n";
 // file_put_contents("../cronjob/log_cronjob.txt", $logMail, FILE_APPEND);

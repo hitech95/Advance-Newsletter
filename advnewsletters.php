@@ -225,7 +225,7 @@ class AdvNewsletters extends Module
     {
         $html = null;
 
-        $this->context->controller->addCSS($this->_path.'views/css/style.css');
+        $this->context->controller->addCSS($this->_path . 'views/css/style.css');
 
         // baseAdminModuleUrl
         $baseAdminModuleUrl = AdminController::$currentIndex . '&token=' . Tools::getAdminTokenLite('AdminModules') . '&configure=' . $this->name . '&tab_module=' . $this->tab . '&module_name=' . $this->name . '';
@@ -294,6 +294,70 @@ class AdvNewsletters extends Module
         return $html;
     }
 
+    public function getNewsletter()
+    {
+        //TODO - calculate  mails in queue
+        $dbquery = new DbQuery();
+        $dbquery->select('n.`id` AS `id`, n.`name` AS `name`, n.`status` AS `sent`, n.`date` AS `date`, 0 as total_queue');
+        $dbquery->from('newsletter_campain', 'n');
+        $dbquery->orderBy('n.`date` DESC');
+
+        return Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($dbquery->build());
+    }
+
+    public function getTemplates($enabled = false)
+    {
+        $id_lang = $this->context->language->id;
+
+        $dbquery = new DbQuery();
+        $dbquery->select('t.`id` AS `id`, l.`name` AS `name`, t.`status` AS `status`');
+        $dbquery->from('newsletter_template', 't');
+        $dbquery->leftJoin('newsletter_template_lang', 'l', 't.id = l.id_template');
+        $dbquery->where('l.`id_lang` = ' . $id_lang);
+
+        if ($enabled) {
+            $dbquery->where('t.`status` = 1');
+        }
+
+        return Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($dbquery->build());
+    }
+
+    public function getCustomers()
+    {
+        $emailQuery = ' c.`email` AS `email`';
+
+        $dbquery = new DbQuery();
+        $dbquery->select('c.`id_customer` AS `id`, CONCAT(c.`lastname`, \' \', c.`firstname`) AS name, c.`email` AS `email`');
+        $dbquery->from('customer', 'c');
+
+        return Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($dbquery->build());
+    }
+
+    public function getSubscribers()
+    {
+        $dbquery = new DbQuery();
+        $dbquery->select('c.`id_customer` AS `id`, s.`name` AS `shop_name`, NULL AS `id_lang`, gl.`name` AS `gender`, c.`lastname`, c.`firstname`, c.`email`, c.`newsletter` AS `subscribed`, c.`newsletter_date_add`');
+        $dbquery->from('customer', 'c');
+        $dbquery->leftJoin('shop', 's', 's.id_shop = c.id_shop');
+        $dbquery->leftJoin('gender', 'g', 'g.id_gender = c.id_gender');
+        $dbquery->leftJoin('gender_lang', 'gl', 'g.id_gender = gl.id_gender AND gl.id_lang = ' . (int)$this->context->employee->id_lang);
+        $dbquery->where('c.`newsletter` = 1');
+
+        $customers = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($dbquery->build());
+
+        $dbquery = new DbQuery();
+        $dbquery->select('CONCAT(\'N\', n.`id`) AS `id`, s.`name` AS `shop_name`, n.`id_lang` AS `id_lang`, NULL AS `gender`, NULL AS `lastname`, NULL AS `firstname`, n.`email`, n.`active` AS `subscribed`, n.`newsletter_date_add`');
+        $dbquery->from('newsletter_subscriber', 'n');
+        $dbquery->leftJoin('shop', 's', 's.id_shop = n.id_shop');
+
+        $non_customers = Db::getInstance()->executeS($dbquery->build());
+
+        $subscribers = array_merge($customers, $non_customers);
+
+        return $subscribers;
+    }
+
+
     public function getLanguagesList()
     {
         // initialize languages array
@@ -326,7 +390,6 @@ class AdvNewsletters extends Module
         if (Tools::isSubmit('submitNewsletter')) {
             //Register user to the newsletter or unsubscribe
             $this->newsletterRegistration();
-            die;
             if ($this->error) {
                 $this->smarty->assign(
                     array(

@@ -148,18 +148,6 @@ class BANewsletterAdmin extends AdvNewsletters
         return $this->display("advnewsletters", 'views/templates/admin/newsletters/list_action_clearqueue.tpl');
     }
 
-
-    public function getNewsletter()
-    {
-        //TODO - calculate  mails in queue
-        $dbquery = new DbQuery();
-        $dbquery->select('n.`id` AS `id`, n.`name` AS `name`, n.`status` AS `sent`, n.`date` AS `date`, 0 as total_queue');
-        $dbquery->from('newsletter_campain', 'n');
-        $dbquery->orderBy('n.`date`');
-
-        return $this->db->executeS($dbquery->build());
-    }
-
     public function paginateNewsletter($newsletters, $page = 1, $pagination = 50)
     {
         if (count($newsletters) > $pagination)
@@ -212,7 +200,7 @@ class BANewsletterAdmin extends AdvNewsletters
                     'name' => 'advnewsletters_newsletter_template',
                     'required' => true,
                     'options' => array(
-                        'query' => $this->getTemplates(),
+                        'query' => $this->getTemplates(true),
                         'id' => 'id',
                         'name' => 'name'
                     ),
@@ -336,28 +324,6 @@ class BANewsletterAdmin extends AdvNewsletters
         return $helper->generateForm($fields_form);
     }
 
-    public function getTemplates()
-    {
-        $id_lang = $this->context->language->id;
-
-        $dbquery = new DbQuery();
-        $dbquery->select('t.`id` AS `id`, l.`name` AS `name`');
-        $dbquery->from('newsletter_template', 't');
-        $dbquery->leftJoin('newsletter_template_lang', 'l', 't.id = l.id_template');
-        $dbquery->where('l.`id_lang` = ' . $id_lang . ' AND t.`status` = 1');
-
-        return $this->db->executeS($dbquery->build());
-    }
-
-    public function getCustomers()
-    {
-        $dbquery = new DbQuery();
-        $dbquery->select('c.`id_customer` AS `id`, CONCAT(c.`lastname`, \' \', c.`firstname`) AS name');
-        $dbquery->from('customer', 'c');
-
-        return $this->db->executeS($dbquery->build());
-    }
-
     public function loadNewsletterDetails($id)
     {
         $newsletterArray = array();
@@ -463,13 +429,103 @@ class BANewsletterAdmin extends AdvNewsletters
         return true;
     }
 
-    public function generateQueue($id){
+    public function generateQueue($id)
+    {
+        // Get default language
+        $default_lang = (int)Configuration::get('PS_LANG_DEFAULT');
+
+        $mailQueue = array();
         $details = $this->loadNewsletterDetails($id);
 
-        $
-        var_dump($details);die;
+        //Load the template
+        $dbquery = new DbQuery();
+        $dbquery->select('*');
+        $dbquery->from('newsletter_template_lang', 't');
+        $dbquery->where('t.`id_template` = ' . $details['template']);
 
-        //
+        $templateQuery = $this->db->executeS($dbquery->build());
+        $templateArray = array();
+        foreach ($templateQuery as $template) {
+            $templateArray[$template['id_lang']] = $template;
+        }
+
+        //if type contains subscribers
+        if ($details['sendto'] != self::SEND_CUSTUMER) {
+            echo "Send Also to Subscribers\n";
+            $subscribers = $this->getSubscribers();
+
+            foreach ($subscribers as $subscriber) {
+                //Add mails to mailqueue
+                $language_id = $default_lang;
+
+                if (preg_match('/(^N)/', $subscriber['id'])) {
+                    $language_id = $subscriber['id_lang'];
+                }
+
+                $template = $templateArray[$language_id];
+
+                $email = array(
+                    'to' => $subscriber['email'],
+                    'subject' => $template['subject'],
+                    'body' => $template['content'],
+                    'id_newsletter' => $id,
+                );
+
+                $mailQueue[$subscriber['email']] = $email;
+            }
+        }
+
+        if ($details['sendto'] != self::SEND_SUBSCRIBED) {
+            echo "Send Also to customers\n";
+
+            $customers = array();
+
+            //Load all Customers else get by array
+            if ((bool)$details['all_customers']) {
+                $customers = $this->getCustomers();
+            } else {
+                $idCustomersString = implode(",", $details['customers[]']);
+
+                $dbquery = new DbQuery();
+                $dbquery->select('c.`id_customer` AS `id`, c.`email` AS `email`');
+                $dbquery->from('customer', 'c');
+                $dbquery->where('c.`id_customer` IN ( ' . pSQL($idCustomersString) . ' )');
+
+                $customers = $this->db->executeS($dbquery->build());
+            }
+
+            foreach ($customers as $customer) {
+                //Add mails to mailqueue
+                if (!array_key_exists($customer['email'], $mailQueue)) {
+                    $template = $templateArray[$default_lang];
+
+                    $email = array(
+                        'to' => $customer['email'],
+                        'subject' => $template['subject'],
+                        'body' => $template['content'],
+                        'id_newsletter' => $id,
+                    );
+
+                    $mailQueue[$customer['email']] = $email;
+                }
+            }
+        }
+
+        foreach ($mailQueue as $mail) {
+            //Add mails to DB
+            $bodyMail = str_replace("[email]", $mail['to'], $mail['body']);
+            $bodyMail1 = $bodyMail . " < p style = 'text-align:center;' ><a href = '" . Tools::getShopProtocol()
+                . Tools::getHttpHost() . __PS_BASE_URI__
+                . "index.php?controller=unsubscribe&fc=module&module=banewsletters&email="
+                . $mail['to'] . "' > Unsubscriber</a ></p > ";
+
+            $this->db->insert('newsletter_queue', array(
+                'to' => pSQL($mail['to']),
+                'subject' => $mail['subject'],
+                'body' => Tools::htmlentitiesUTF8($bodyMail1),
+                'id_newsletter' => $mail['id_newsletter']
+            ));
+        }
     }
 
     public function caseNewsletter()
@@ -548,50 +604,6 @@ class BANewsletterAdmin extends AdvNewsletters
                 'number_view' => 0,
                 'number_click' => 0,
                 'number_send' => $increase
-            ));
-        }
-    }
-
-    /**
-     *function saveToTableAlign
-     * @param id newsletter
-     * @param user array
-     * @param body mail
-     * @param subject mail
-     * @param from mail
-     * @param from name
-     * @param reply to
-     */
-    private function saveToTableAlign($idNewsletter, $bodyMailArr)
-    {
-        $userArray = $this->getUserArray($idNewsletter);
-        foreach ($userArray as $user) {
-            $bodyMail = null;
-            $subject = null;
-            foreach ($bodyMailArr as $bodyMails) {
-                if ($user['id_lang'] == $bodyMails['id_lang']) {
-                    $bodyMail = $bodyMails['content'];
-                    $subject = $bodyMails['subject'];
-                } else {
-                    $bodyMail = $bodyMailArr[$user['id_lang']]['content'];
-                    $subject = $bodyMailArr[$user['id_lang']]['subject'];
-                }
-            }
-            $bodyMail = str_replace("[email]", $user['email'], $bodyMail);
-            $firstName = ($user['firstname'] != "") ? $user['firstname'] : "";
-            $bodyMail = str_replace("[firstname]", $firstName, $bodyMail);
-            $lastName = ($user['lastname'] != "") ? $user['lastname'] : "Guest";
-            $bodyMail = str_replace("[lastname]", $lastName, $bodyMail);
-            $bodyMail1 = $bodyMail . " < p style = 'text-align:center;' ><a href = '" . Tools::getShopProtocol()
-                . Tools::getHttpHost() . __PS_BASE_URI__
-                . "index.php?controller=unsubscribe&fc=module&module=banewsletters&email="
-                . $user['email'] . "' > Unsubscriber</a ></p > ";
-
-            $this->db->insert('ba_align', array(
-                'to' => pSQL($user['email']),
-                'subject' => $subject,
-                'body' => Tools::htmlentitiesUTF8($bodyMail1),
-                'id_newsletter' => (int)$idNewsletter
             ));
         }
     }
